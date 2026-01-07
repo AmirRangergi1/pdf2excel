@@ -137,7 +137,7 @@ export default {
       
       this.isLoading = true
       this.status = 'loading'
-      this.statusMessage = '⏳ Uploading file... (this may take a few moments for large files)'
+      this.statusMessage = '⏳ Uploading file... (analyzing PDF structure)'
       this.progress = 0
       
       try {
@@ -154,10 +154,13 @@ export default {
             if (percentCompleted < 50) {
               this.statusMessage = `⏳ Uploading file... ${percentCompleted}%`
             } else {
-              this.statusMessage = `⏳ Processing PDF... ${percentCompleted}%`
+              this.statusMessage = `⏳ Analyzing PDF and detecting tables... ${percentCompleted}%`
             }
           }
         })
+        
+        // Get detection method from response headers
+        const detectionMethod = response.headers['x-detection-method'] || 'standard'
         
         // Create download link
         const url = window.URL.createObjectURL(new Blob([response.data]))
@@ -165,17 +168,40 @@ export default {
         this.downloadFileName = `${this.selectedFile.name.replace('.pdf', '')}.xlsx`
         
         this.status = 'success'
-        this.statusMessage = '✅ Conversion successful! Ready to download.'
+        let successMessage = '✅ Conversion successful!'
+        
+        // Add information about detection method if fallback was used
+        if (detectionMethod.includes('fallback') || detectionMethod.includes('text')) {
+          successMessage += ` (Used ${detectionMethod.replace(/_/g, ' ')} extraction)`
+        } else if (detectionMethod.includes('camelot')) {
+          successMessage += ' (Alternative table detection used)'
+        }
+        
+        successMessage += ' Ready to download.'
+        this.statusMessage = successMessage
         this.progress = 100
         
       } catch (error) {
         this.status = 'error'
+        
+        // Enhanced error messages
         if (error.response && error.response.data && error.response.data.detail) {
-          this.statusMessage = `❌ Error: ${error.response.data.detail}`
+          const detail = error.response.data.detail
+          
+          // Provide helpful guidance based on error type
+          if (detail.includes('No tables found')) {
+            this.statusMessage = `❌ Could not extract tables. The PDF may contain:\n• Non-standard table formats\n• Scanned images without text\n• Unstructured data\n\nTry converting a different PDF or ensure it contains table data.`
+          } else if (detail.includes('must be a PDF')) {
+            this.statusMessage = `❌ Error: Please upload a valid PDF file.`
+          } else {
+            this.statusMessage = `❌ Error: ${detail}`
+          }
         } else if (error.response && error.response.status === 400) {
-          this.statusMessage = '❌ Error: No tables found in PDF. Please ensure the PDF contains table data.'
+          this.statusMessage = `❌ Conversion failed: Invalid file or unsupported format. Please ensure the PDF contains extractable data.`
+        } else if (error.code === 'ECONNABORTED') {
+          this.statusMessage = `❌ Error: Request timeout. The file may be too large or the server is busy.`
         } else {
-          this.statusMessage = `❌ Error: ${error.message || 'Conversion failed'}`
+          this.statusMessage = `❌ Error: ${error.message || 'Conversion failed. Please try again.'}`
         }
         this.progress = 0
       } finally {
