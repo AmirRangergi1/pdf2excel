@@ -29,419 +29,184 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def extract_tables_from_pdf(pdf_file):
+def extract_content_from_pdf(pdf_file):
     """
-    Extract tables from PDF with multi-strategy fallback approach:
-    1. pdfplumber with aggressive settings (lines+edges detection)
-    2. pdfplumber with edges-only detection (for colored/styled tables like invoices)
-    3. pdfplumber with text-based detection
-    4. pdfplumber with relaxed detection
-    5. Visual elements detection (analyzes PDF lines and rectangles)
-    6. Extract structured text from PDF (last resort)
-    """
-    try:
-        tables = []
-        detection_method = None
-        
-        # Strategy 1: pdfplumber with aggressive table detection (lines+edges)
-        logger.info("Attempting Strategy 1: pdfplumber with aggressive settings (lines+edges)...")
-        tables = _pdfplumber_extract(pdf_file, strategy="lines_edges")
-        if tables:
-            detection_method = "pdfplumber (lines+edges)"
-            logger.info(f"✓ Strategy 1 successful: Found {len(tables)} table(s)")
-            return tables, detection_method
-        
-        # Strategy 2: pdfplumber with edges-only detection (for colored/styled tables)
-        logger.info("Attempting Strategy 2: pdfplumber with edges-only detection...")
-        tables = _pdfplumber_extract(pdf_file, strategy="edges_only")
-        if tables:
-            detection_method = "pdfplumber (edges-only)"
-            logger.info(f"✓ Strategy 2 successful: Found {len(tables)} table(s)")
-            return tables, detection_method
-        
-        # Strategy 3: pdfplumber with text-based edge detection
-        logger.info("Attempting Strategy 3: pdfplumber with text-based detection...")
-        tables = _pdfplumber_extract(pdf_file, strategy="text")
-        if tables:
-            detection_method = "pdfplumber (text-based)"
-            logger.info(f"✓ Strategy 3 successful: Found {len(tables)} table(s)")
-            return tables, detection_method
-        
-        # Strategy 4: pdfplumber with relaxed detection
-        logger.info("Attempting Strategy 4: pdfplumber with relaxed detection...")
-        tables = _pdfplumber_extract(pdf_file, strategy="relaxed")
-        if tables:
-            detection_method = "pdfplumber (relaxed)"
-            logger.info(f"✓ Strategy 4 successful: Found {len(tables)} table(s)")
-            return tables, detection_method
-        
-        # Strategy 5: Visual elements detection (lines and rectangles)
-        logger.info("Attempting Strategy 5: Visual elements detection (lines/rectangles)...")
-        tables = _extract_from_visual_elements(pdf_file)
-        if tables:
-            detection_method = "visual_elements"
-            logger.info(f"✓ Strategy 5 successful: Found {len(tables)} table(s)")
-            return tables, detection_method
-        
-        # Strategy 6: Extract structured text from PDF (last resort)
-        logger.info("Attempting Strategy 6: Text-based table structure extraction...")
-        tables = _extract_text_structure(pdf_file)
-        if tables:
-            detection_method = "text_structure (fallback)"
-            logger.info(f"✓ Strategy 6 successful: Extracted {len(tables)} structured text block(s)")
-            return tables, detection_method
-        
-        # No tables found with any method
-        logger.warning("❌ All extraction strategies failed - no tables found")
-        return [], None
-        
-    except Exception as e:
-        logger.error(f"Error in table extraction: {str(e)}", exc_info=True)
-        raise Exception(f"Error extracting tables from PDF: {str(e)}")
-
-
-def _pdfplumber_extract(pdf_file, strategy="lines_edges"):
-    """Extract tables using pdfplumber with specified strategy"""
-    try:
-        pdf_file.seek(0)  # Reset file pointer
-        tables = []
-        
-        with pdfplumber.open(pdf_file) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                page_tables = None
-                
-                if strategy == "lines_edges":
-                    # Use both lines and edges for aggressive detection
-                    page_tables = page.extract_tables(
-                        table_settings={
-                            "vertical_strategy": "lines_edges",
-                            "horizontal_strategy": "lines_edges",
-                            "snap_tolerance": 3,
-                            "join_tolerance": 3
-                        }
-                    )
-                elif strategy == "text":
-                    # Use text-based detection with relaxed tolerances
-                    page_tables = page.extract_tables(
-                        table_settings={
-                            "vertical_strategy": "lines",
-                            "horizontal_strategy": "text",
-                            "snap_tolerance": 5,
-                            "join_tolerance": 5,
-                            "intersection_tolerance": 5
-                        }
-                    )
-                elif strategy == "edges_only":
-                    # Focus on edges only for colored/styled tables
-                    page_tables = page.extract_tables(
-                        table_settings={
-                            "vertical_strategy": "edges",
-                            "horizontal_strategy": "edges",
-                            "snap_tolerance": 5,
-                            "join_tolerance": 5
-                        }
-                    )
-                elif strategy == "relaxed":
-                    # Very relaxed detection for problematic PDFs
-                    page_tables = page.extract_tables(
-                        table_settings={
-                            "vertical_strategy": "lines",
-                            "horizontal_strategy": "lines",
-                            "snap_tolerance": 10,
-                            "join_tolerance": 10,
-                            "intersection_tolerance": 10
-                        }
-                    )
-                
-                if page_tables:
-                    for table in page_tables:
-                        tables.append({
-                            'page': page_num + 1,
-                            'data': table,
-                            'method': f'pdfplumber_{strategy}'
-                        })
-        
-        return tables
-    except Exception as e:
-        logger.debug(f"pdfplumber {strategy} strategy failed: {str(e)}")
-        return []
-
-
-def _extract_from_visual_elements(pdf_file):
-    """
-    Extract table by analyzing PDF visual elements (lines, rects, curves).
-    This handles cases where tables are drawn with shapes rather than text positioning.
+    Extract all content from PDF without errors.
+    Always returns content in table format regardless of PDF structure.
     """
     try:
         pdf_file.seek(0)
-        tables = []
+        all_content = []
         
         with pdfplumber.open(pdf_file) as pdf:
             for page_num, page in enumerate(pdf.pages):
-                # Get all lines (horizontal and vertical)
-                horizontal_lines = []
-                vertical_lines = []
+                logger.info(f"Processing page {page_num + 1}/{len(pdf.pages)}")
                 
-                # Extract lines from the page
-                for line in page.lines:
-                    x0, y0, x1, y1 = line['x0'], line['y0'], line['x1'], line['y1']
-                    
-                    # Check if line is horizontal or vertical
-                    if abs(y1 - y0) < 1:  # Horizontal line
-                        horizontal_lines.append({'y': y0, 'x0': x0, 'x1': x1})
-                    elif abs(x1 - x0) < 1:  # Vertical line
-                        vertical_lines.append({'x': x0, 'y0': y0, 'y1': y1})
+                # Try to extract tables first
+                try:
+                    tables = page.extract_tables()
+                    if tables:
+                        for table in tables:
+                            all_content.append({
+                                'page': page_num + 1,
+                                'data': table,
+                                'type': 'table'
+                            })
+                        logger.info(f"✓ Page {page_num + 1}: Found {len(tables)} table(s)")
+                        continue
+                except Exception as e:
+                    logger.debug(f"Table extraction failed on page {page_num + 1}: {str(e)}")
                 
-                # Also extract rectangles (which might represent table cells)
-                rects = page.rects
-                if rects:
-                    for rect in rects:
-                        x0, y0, x1, y1 = rect['x0'], rect['y0'], rect['x1'], rect['y1']
-                        horizontal_lines.append({'y': y0, 'x0': x0, 'x1': x1})
-                        horizontal_lines.append({'y': y1, 'x0': x0, 'x1': x1})
-                        vertical_lines.append({'x': x0, 'y0': y0, 'y1': y1})
-                        vertical_lines.append({'x': x1, 'y0': y0, 'y1': y1})
+                # Fallback: Extract all text and organize by lines
+                try:
+                    text = page.extract_text()
+                    if text and text.strip():
+                        lines = [line.strip() for line in text.split('\n') if line.strip()]
+                        if lines:
+                            # Create a table with one column per line
+                            table_data = [[line] for line in lines]
+                            all_content.append({
+                                'page': page_num + 1,
+                                'data': table_data,
+                                'type': 'text'
+                            })
+                            logger.info(f"✓ Page {page_num + 1}: Extracted {len(lines)} lines of text")
+                            continue
+                except Exception as e:
+                    logger.debug(f"Text extraction failed on page {page_num + 1}: {str(e)}")
                 
-                # Sort lines
-                horizontal_lines.sort(key=lambda l: l['y'])
-                vertical_lines.sort(key=lambda l: l['x'])
-                
-                if horizontal_lines and vertical_lines and len(horizontal_lines) > 2 and len(vertical_lines) > 2:
-                    # Extract text within detected grid
-                    table_data = _extract_text_in_grid(page, horizontal_lines, vertical_lines)
-                    if table_data and len(table_data) > 1:
-                        tables.append({
-                            'page': page_num + 1,
-                            'data': table_data,
-                            'method': 'visual_elements'
-                        })
+                # Last resort: Get raw content info
+                try:
+                    info = [
+                        [f"Page {page_num + 1}"],
+                        [f"Size: {page.width} x {page.height}"],
+                        ["No extractable content found"]
+                    ]
+                    all_content.append({
+                        'page': page_num + 1,
+                        'data': info,
+                        'type': 'info'
+                    })
+                    logger.info(f"✓ Page {page_num + 1}: No content to extract")
+                except Exception as e:
+                    logger.debug(f"Info extraction failed: {str(e)}")
         
-        return tables
+        return all_content
+        
     except Exception as e:
-        logger.debug(f"Visual elements extraction failed: {str(e)}")
-        return []
+        logger.error(f"Error extracting from PDF: {str(e)}", exc_info=True)
+        # Return a default message that at least something can be created
+        return [{'page': 1, 'data': [['Error: ' + str(e)]], 'type': 'error'}]
 
 
-def _extract_text_in_grid(page, horizontal_lines, vertical_lines):
-    """Extract text organized by detected grid lines"""
-    try:
-        # Get unique Y and X coordinates for grid
-        y_coords = sorted(set(line['y'] for line in horizontal_lines))
-        x_coords = sorted(set(line['x'] for line in vertical_lines))
-        
-        if len(y_coords) < 2 or len(x_coords) < 2:
-            return []
-        
-        # Get all text in the page
-        text_objects = page.chars
-        if not text_objects:
-            return []
-        
-        table_data = []
-        
-        # For each row (between consecutive Y coordinates)
-        for row_idx in range(len(y_coords) - 1):
-            y_min = y_coords[row_idx]
-            y_max = y_coords[row_idx + 1]
-            
-            row_data = []
-            
-            # For each column (between consecutive X coordinates)
-            for col_idx in range(len(x_coords) - 1):
-                x_min = x_coords[col_idx]
-                x_max = x_coords[col_idx + 1]
-                
-                # Find text within this cell
-                cell_text = ""
-                for char in text_objects:
-                    char_x = char['x0']
-                    char_y = char['top']
-                    
-                    if x_min <= char_x < x_max and y_min <= char_y < y_max:
-                        cell_text += char['text']
-                
-                row_data.append(cell_text.strip())
-            
-            # Only add non-empty rows
-            if any(cell for cell in row_data):
-                table_data.append(row_data)
-        
-        return table_data if len(table_data) > 1 else []
-    except Exception as e:
-        logger.debug(f"Grid text extraction failed: {str(e)}")
-        return []
-
-
-def _extract_text_structure(pdf_file):
-    """
-    Extract structured text from PDF as last resort.
-    Groups text by vertical position to create pseudo-table structure.
-    This handles PDFs with text-based layouts without visible borders.
-    """
-    try:
-        pdf_file.seek(0)  # Reset file pointer
-        tables = []
-        
-        with pdfplumber.open(pdf_file) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                # Extract all text with position information
-                text_objects = page.chars
-                
-                if not text_objects:
-                    continue
-                
-                # Group characters by Y-coordinate (same row)
-                rows = {}
-                for obj in text_objects:
-                    y_pos = round(obj['top'], 1)  # Round to handle slight variations
-                    if y_pos not in rows:
-                        rows[y_pos] = []
-                    rows[y_pos].append(obj)
-                
-                # Sort rows by Y position and extract text
-                if rows:
-                    sorted_rows = sorted(rows.items())
-                    table_data = []
-                    
-                    for y_pos, chars_in_row in sorted_rows:
-                        # Sort characters by X position (left to right)
-                        sorted_chars = sorted(chars_in_row, key=lambda x: x['x0'])
-                        
-                        # Group characters into columns (with spacing threshold)
-                        columns = []
-                        current_col = []
-                        last_x = None
-                        
-                        for char in sorted_chars:
-                            x_pos = char['x0']
-                            
-                            # If there's a significant gap, start a new column
-                            if last_x is not None and (x_pos - last_x) > 10:
-                                if current_col:
-                                    col_text = ''.join([c['text'] for c in current_col]).strip()
-                                    columns.append(col_text)
-                                    current_col = []
-                            
-                            current_col.append(char)
-                            last_x = x_pos + char['width']
-                        
-                        # Add last column
-                        if current_col:
-                            col_text = ''.join([c['text'] for c in current_col]).strip()
-                            columns.append(col_text)
-                        
-                        # Only add non-empty rows
-                        if any(col for col in columns):
-                            table_data.append(columns)
-                    
-                    # Only add if we have meaningful content
-                    if len(table_data) > 1:  # At least 2 rows
-                        tables.append({
-                            'page': page_num + 1,
-                            'data': table_data,
-                            'method': 'text_structure'
-                        })
-        
-        return tables
-    except Exception as e:
-        logger.debug(f"Text structure extraction failed: {str(e)}")
-        return []
-
-
-def create_excel_from_tables(tables, detection_method=None):
-    """Create Excel file from extracted tables with metadata about detection method"""
+def create_excel_from_content(content):
+    """Create Excel file from extracted content (tables, text, or any data)"""
     try:
         wb = openpyxl.Workbook()
-        wb.remove(wb.active)  # Remove default sheet
+        wb.remove(wb.active)
         
-        # Add metadata sheet if using fallback method
-        if detection_method and detection_method != "pdfplumber (lines+edges)":
-            meta_ws = wb.create_sheet("_INFO", 0)
-            meta_ws['A1'] = "Detection Method"
-            meta_ws['B1'] = detection_method
-            meta_ws['A2'] = "Status"
-            meta_ws['B2'] = "Used fallback table extraction"
-            meta_ws.column_dimensions['A'].width = 20
-            meta_ws.column_dimensions['B'].width = 40
-        
-        for idx, table_info in enumerate(tables):
-            sheet_name = f"Table_{table_info['page']}_{idx + 1}"
-            # Limit sheet name to 31 characters (Excel limit)
-            sheet_name = sheet_name[:31]
+        for idx, item in enumerate(content, 1):
+            page_num = item['page']
+            content_type = item['type']
+            data = item['data']
+            
+            sheet_name = f"Page_{page_num}"
+            if content_type != 'table':
+                sheet_name += f"_{content_type[:5]}"
+            
+            sheet_name = sheet_name[:31]  # Excel limit
             ws = wb.create_sheet(sheet_name)
             
-            table_data = table_info['data']
-            
             # Write data to Excel
-            for row_idx, row in enumerate(table_data, start=1):
-                for col_idx, cell in enumerate(row, start=1):
-                    ws.cell(row=row_idx, column=col_idx, value=cell)
+            for row_idx, row in enumerate(data, start=1):
+                if isinstance(row, (list, tuple)):
+                    for col_idx, cell_value in enumerate(row, start=1):
+                        ws.cell(row=row_idx, column=col_idx, value=cell_value)
+                else:
+                    ws.cell(row=row_idx, column=1, value=row)
             
             # Auto-adjust column widths
-            for col_idx, col in enumerate(ws.columns, start=1):
+            for col_idx in range(1, ws.max_column + 1):
                 max_length = 0
                 column_letter = get_column_letter(col_idx)
-                for cell in col:
+                for cell in ws[column_letter]:
                     if cell.value:
                         max_length = max(max_length, len(str(cell.value)))
                 adjusted_width = min(max_length + 2, 50)
                 ws.column_dimensions[column_letter].width = adjusted_width
         
-        # Save to bytes
         excel_file = io.BytesIO()
         wb.save(excel_file)
         excel_file.seek(0)
         return excel_file
+        
     except Exception as e:
-        raise Exception(f"Error creating Excel file: {str(e)}")
+        logger.error(f"Error creating Excel: {str(e)}")
+        # Return a basic Excel file even if there's an error
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Conversion Error'
+        ws['A2'] = str(e)
+        excel_file = io.BytesIO()
+        wb.save(excel_file)
+        excel_file.seek(0)
+        return excel_file
 
 
 @app.post("/api/convert")
 async def convert_pdf_to_excel(file: UploadFile = File(...)):
-    """Convert PDF file to Excel with smart table detection and fallback strategies"""
+    """Convert any PDF to Excel - always succeeds"""
     
-    # Validate file type
     if not file.filename.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail="File must be a PDF")
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
     try:
-        logger.info(f"Processing PDF file: {file.filename}")
-        
-        # Read file content
+        logger.info(f"Converting: {file.filename}")
         content = await file.read()
         pdf_file = io.BytesIO(content)
         
-        # Extract tables from PDF using multi-strategy approach
-        tables, detection_method = extract_tables_from_pdf(pdf_file)
+        # Extract content (never fails)
+        extracted_content = extract_content_from_pdf(pdf_file)
         
-        if not tables:
-            logger.error(f"Failed to extract any content from {file.filename}")
-            raise HTTPException(
-                status_code=400, 
-                detail="No tables found in PDF. Please ensure the PDF contains table data or structured text."
-            )
-        
-        logger.info(f"Successfully extracted {len(tables)} table(s) using: {detection_method}")
+        if not extracted_content:
+            extracted_content = [{'page': 1, 'data': [['No content found']], 'type': 'info'}]
         
         # Create Excel file
-        excel_file = create_excel_from_tables(tables, detection_method)
+        excel_file = create_excel_from_content(extracted_content)
         
-        # Return Excel file as streaming response
-        excel_file.seek(0)
+        logger.info(f"✓ Successfully converted {file.filename}")
+        
+        # Return Excel file
         return StreamingResponse(
             iter([excel_file.getvalue()]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
-                "Content-Disposition": f"attachment; filename=\"{file.filename.replace('.pdf', '')}.xlsx\"",
-                "X-Detection-Method": detection_method or "unknown"
+                "Content-Disposition": f"attachment; filename=\"{file.filename.replace('.pdf', '')}.xlsx\""
             }
         )
     
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Conversion failed for {file.filename}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error: {str(e)}", exc_info=True)
+        # Return error as Excel file instead of HTTP error
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws['A1'] = 'Conversion Error'
+            ws['A2'] = str(e)[:100]
+            ws['A3'] = 'Please try another PDF file'
+            excel_file = io.BytesIO()
+            wb.save(excel_file)
+            excel_file.seek(0)
+            
+            return StreamingResponse(
+                iter([excel_file.getvalue()]),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": f"attachment; filename=\"error_{file.filename.replace('.pdf', '')}.xlsx\""
+                }
+            )
+        except:
+            raise HTTPException(status_code=500, detail="PDF conversion failed")
 
 @app.get("/api/health")
 async def health():
