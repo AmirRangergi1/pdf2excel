@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
@@ -273,12 +273,13 @@ async def convert_pdf_to_excel(file: UploadFile = File(...)):
         # Create Excel file
         excel_file = create_excel_from_tables(tables, detection_method)
         
-        # Return Excel file
-        return FileResponse(
-            excel_file,
+        # Return Excel file as streaming response
+        excel_file.seek(0)
+        return StreamingResponse(
+            iter([excel_file.getvalue()]),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename=f"{file.filename.replace('.pdf', '')}.xlsx",
             headers={
+                "Content-Disposition": f"attachment; filename=\"{file.filename.replace('.pdf', '')}.xlsx\"",
                 "X-Detection-Method": detection_method or "unknown"
             }
         )
