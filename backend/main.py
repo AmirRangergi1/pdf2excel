@@ -36,7 +36,8 @@ def extract_tables_from_pdf(pdf_file):
     2. pdfplumber with edges-only detection (for colored/styled tables like invoices)
     3. pdfplumber with text-based detection
     4. pdfplumber with relaxed detection
-    5. Extract structured text from PDF (last resort)
+    5. Visual elements detection (analyzes PDF lines and rectangles)
+    6. Extract structured text from PDF (last resort)
     """
     try:
         tables = []
@@ -74,12 +75,20 @@ def extract_tables_from_pdf(pdf_file):
             logger.info(f"✓ Strategy 4 successful: Found {len(tables)} table(s)")
             return tables, detection_method
         
-        # Strategy 5: Extract structured text from PDF (last resort)
-        logger.info("Attempting Strategy 5: Text-based table structure extraction...")
+        # Strategy 5: Visual elements detection (lines and rectangles)
+        logger.info("Attempting Strategy 5: Visual elements detection (lines/rectangles)...")
+        tables = _extract_from_visual_elements(pdf_file)
+        if tables:
+            detection_method = "visual_elements"
+            logger.info(f"✓ Strategy 5 successful: Found {len(tables)} table(s)")
+            return tables, detection_method
+        
+        # Strategy 6: Extract structured text from PDF (last resort)
+        logger.info("Attempting Strategy 6: Text-based table structure extraction...")
         tables = _extract_text_structure(pdf_file)
         if tables:
             detection_method = "text_structure (fallback)"
-            logger.info(f"✓ Strategy 5 successful: Extracted {len(tables)} structured text block(s)")
+            logger.info(f"✓ Strategy 6 successful: Extracted {len(tables)} structured text block(s)")
             return tables, detection_method
         
         # No tables found with any method
@@ -155,6 +164,111 @@ def _pdfplumber_extract(pdf_file, strategy="lines_edges"):
         return tables
     except Exception as e:
         logger.debug(f"pdfplumber {strategy} strategy failed: {str(e)}")
+        return []
+
+
+def _extract_from_visual_elements(pdf_file):
+    """
+    Extract table by analyzing PDF visual elements (lines, rects, curves).
+    This handles cases where tables are drawn with shapes rather than text positioning.
+    """
+    try:
+        pdf_file.seek(0)
+        tables = []
+        
+        with pdfplumber.open(pdf_file) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                # Get all lines (horizontal and vertical)
+                horizontal_lines = []
+                vertical_lines = []
+                
+                # Extract lines from the page
+                for line in page.lines:
+                    x0, y0, x1, y1 = line['x0'], line['y0'], line['x1'], line['y1']
+                    
+                    # Check if line is horizontal or vertical
+                    if abs(y1 - y0) < 1:  # Horizontal line
+                        horizontal_lines.append({'y': y0, 'x0': x0, 'x1': x1})
+                    elif abs(x1 - x0) < 1:  # Vertical line
+                        vertical_lines.append({'x': x0, 'y0': y0, 'y1': y1})
+                
+                # Also extract rectangles (which might represent table cells)
+                rects = page.rects
+                if rects:
+                    for rect in rects:
+                        x0, y0, x1, y1 = rect['x0'], rect['y0'], rect['x1'], rect['y1']
+                        horizontal_lines.append({'y': y0, 'x0': x0, 'x1': x1})
+                        horizontal_lines.append({'y': y1, 'x0': x0, 'x1': x1})
+                        vertical_lines.append({'x': x0, 'y0': y0, 'y1': y1})
+                        vertical_lines.append({'x': x1, 'y0': y0, 'y1': y1})
+                
+                # Sort lines
+                horizontal_lines.sort(key=lambda l: l['y'])
+                vertical_lines.sort(key=lambda l: l['x'])
+                
+                if horizontal_lines and vertical_lines and len(horizontal_lines) > 2 and len(vertical_lines) > 2:
+                    # Extract text within detected grid
+                    table_data = _extract_text_in_grid(page, horizontal_lines, vertical_lines)
+                    if table_data and len(table_data) > 1:
+                        tables.append({
+                            'page': page_num + 1,
+                            'data': table_data,
+                            'method': 'visual_elements'
+                        })
+        
+        return tables
+    except Exception as e:
+        logger.debug(f"Visual elements extraction failed: {str(e)}")
+        return []
+
+
+def _extract_text_in_grid(page, horizontal_lines, vertical_lines):
+    """Extract text organized by detected grid lines"""
+    try:
+        # Get unique Y and X coordinates for grid
+        y_coords = sorted(set(line['y'] for line in horizontal_lines))
+        x_coords = sorted(set(line['x'] for line in vertical_lines))
+        
+        if len(y_coords) < 2 or len(x_coords) < 2:
+            return []
+        
+        # Get all text in the page
+        text_objects = page.chars
+        if not text_objects:
+            return []
+        
+        table_data = []
+        
+        # For each row (between consecutive Y coordinates)
+        for row_idx in range(len(y_coords) - 1):
+            y_min = y_coords[row_idx]
+            y_max = y_coords[row_idx + 1]
+            
+            row_data = []
+            
+            # For each column (between consecutive X coordinates)
+            for col_idx in range(len(x_coords) - 1):
+                x_min = x_coords[col_idx]
+                x_max = x_coords[col_idx + 1]
+                
+                # Find text within this cell
+                cell_text = ""
+                for char in text_objects:
+                    char_x = char['x0']
+                    char_y = char['top']
+                    
+                    if x_min <= char_x < x_max and y_min <= char_y < y_max:
+                        cell_text += char['text']
+                
+                row_data.append(cell_text.strip())
+            
+            # Only add non-empty rows
+            if any(cell for cell in row_data):
+                table_data.append(row_data)
+        
+        return table_data if len(table_data) > 1 else []
+    except Exception as e:
+        logger.debug(f"Grid text extraction failed: {str(e)}")
         return []
 
 
