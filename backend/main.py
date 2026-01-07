@@ -33,8 +33,10 @@ def extract_tables_from_pdf(pdf_file):
     """
     Extract tables from PDF with multi-strategy fallback approach:
     1. pdfplumber with aggressive settings (lines+edges detection)
-    2. pdfplumber with text-based detection
-    3. Extract structured text from PDF (last resort)
+    2. pdfplumber with edges-only detection (for colored/styled tables like invoices)
+    3. pdfplumber with text-based detection
+    4. pdfplumber with relaxed detection
+    5. Extract structured text from PDF (last resort)
     """
     try:
         tables = []
@@ -48,20 +50,36 @@ def extract_tables_from_pdf(pdf_file):
             logger.info(f"✓ Strategy 1 successful: Found {len(tables)} table(s)")
             return tables, detection_method
         
-        # Strategy 2: pdfplumber with text-based edge detection
-        logger.info("Attempting Strategy 2: pdfplumber with text-based detection...")
-        tables = _pdfplumber_extract(pdf_file, strategy="text")
+        # Strategy 2: pdfplumber with edges-only detection (for colored/styled tables)
+        logger.info("Attempting Strategy 2: pdfplumber with edges-only detection...")
+        tables = _pdfplumber_extract(pdf_file, strategy="edges_only")
         if tables:
-            detection_method = "pdfplumber (text-based)"
+            detection_method = "pdfplumber (edges-only)"
             logger.info(f"✓ Strategy 2 successful: Found {len(tables)} table(s)")
             return tables, detection_method
         
-        # Strategy 3: Extract structured text from PDF (last resort)
-        logger.info("Attempting Strategy 3: Text-based table structure extraction...")
+        # Strategy 3: pdfplumber with text-based edge detection
+        logger.info("Attempting Strategy 3: pdfplumber with text-based detection...")
+        tables = _pdfplumber_extract(pdf_file, strategy="text")
+        if tables:
+            detection_method = "pdfplumber (text-based)"
+            logger.info(f"✓ Strategy 3 successful: Found {len(tables)} table(s)")
+            return tables, detection_method
+        
+        # Strategy 4: pdfplumber with relaxed detection
+        logger.info("Attempting Strategy 4: pdfplumber with relaxed detection...")
+        tables = _pdfplumber_extract(pdf_file, strategy="relaxed")
+        if tables:
+            detection_method = "pdfplumber (relaxed)"
+            logger.info(f"✓ Strategy 4 successful: Found {len(tables)} table(s)")
+            return tables, detection_method
+        
+        # Strategy 5: Extract structured text from PDF (last resort)
+        logger.info("Attempting Strategy 5: Text-based table structure extraction...")
         tables = _extract_text_structure(pdf_file)
         if tables:
             detection_method = "text_structure (fallback)"
-            logger.info(f"✓ Strategy 3 successful: Extracted {len(tables)} structured text block(s)")
+            logger.info(f"✓ Strategy 5 successful: Extracted {len(tables)} structured text block(s)")
             return tables, detection_method
         
         # No tables found with any method
@@ -102,6 +120,27 @@ def _pdfplumber_extract(pdf_file, strategy="lines_edges"):
                             "snap_tolerance": 5,
                             "join_tolerance": 5,
                             "intersection_tolerance": 5
+                        }
+                    )
+                elif strategy == "edges_only":
+                    # Focus on edges only for colored/styled tables
+                    page_tables = page.extract_tables(
+                        table_settings={
+                            "vertical_strategy": "edges",
+                            "horizontal_strategy": "edges",
+                            "snap_tolerance": 5,
+                            "join_tolerance": 5
+                        }
+                    )
+                elif strategy == "relaxed":
+                    # Very relaxed detection for problematic PDFs
+                    page_tables = page.extract_tables(
+                        table_settings={
+                            "vertical_strategy": "lines",
+                            "horizontal_strategy": "lines",
+                            "snap_tolerance": 10,
+                            "join_tolerance": 10,
+                            "intersection_tolerance": 10
                         }
                     )
                 
