@@ -1,12 +1,42 @@
 #!/bin/bash
 
-echo "🚀 PDF to Excel Converter - Quick Start"
-echo "========================================"
-echo ""
-echo "Setting up Backend..."
+echo "🚀 PDF to Excel Converter - Starting Application"
+echo "=================================================="
 echo ""
 
-cd backend
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# Build Frontend
+echo "📦 Building Frontend..."
+echo ""
+
+cd frontend
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    npm install
+fi
+
+# Build the frontend
+echo "Building Vue.js application..."
+npm run build
+
+if [ $? -ne 0 ]; then
+    echo "❌ Frontend build failed!"
+    exit 1
+fi
+
+echo "✅ Frontend built successfully!"
+echo ""
+
+# Setup Backend
+echo "🔧 Setting up Backend..."
+echo ""
+
+cd ../backend
 
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
@@ -19,34 +49,27 @@ source venv/bin/activate
 
 # Install dependencies
 echo "Installing backend dependencies..."
-pip install -r requirements.txt
+pip install -r requirements.txt --quiet
 
-# Start backend in background
-echo "Starting FastAPI backend on http://localhost:8000..."
-python main.py &
-BACKEND_PID=$!
+if [ $? -ne 0 ]; then
+    echo "❌ Backend setup failed!"
+    exit 1
+fi
 
-sleep 2
-
-echo ""
-echo "Setting up Frontend..."
+echo "✅ Backend setup complete!"
 echo ""
 
-cd ../frontend
-
-# Install dependencies
-echo "Installing frontend dependencies..."
-npm install
-
-# Start frontend
-echo "Starting Vue.js frontend on http://localhost:5173..."
+# Start backend
+echo "🌐 Starting FastAPI Backend..."
+echo "    Backend: http://localhost:8000"
 echo ""
-echo "✅ Application is ready! Open http://localhost:5173 in your browser"
+echo "=========================================="
+echo "Application is ready!"
+echo "=========================================="
 echo ""
-echo "To stop the application, press Ctrl+C"
+echo "Open your browser to: http://localhost:8000"
+echo ""
+echo "Press Ctrl+C to stop the application"
 echo ""
 
-npm run dev
-
-# Cleanup
-kill $BACKEND_PID
+python main.py

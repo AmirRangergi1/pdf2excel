@@ -1,11 +1,42 @@
 @echo off
-echo 🚀 PDF to Excel Converter - Quick Start
-echo ========================================
-echo.
-echo Setting up Backend...
+echo 🚀 PDF to Excel Converter - Starting Application
+echo ==================================================
 echo.
 
-cd backend
+REM Get the directory where this script is located
+setlocal enabledelayedexpansion
+cd /d "%~dp0"
+
+REM Build Frontend
+echo �� Building Frontend...
+echo.
+
+cd frontend
+
+REM Install dependencies if needed
+if not exist "node_modules" (
+    echo Installing frontend dependencies...
+    call npm install
+)
+
+REM Build the frontend
+echo Building Vue.js application...
+call npm run build
+
+if errorlevel 1 (
+    echo ❌ Frontend build failed!
+    pause
+    exit /b 1
+)
+
+echo ✅ Frontend built successfully!
+echo.
+
+REM Setup Backend
+echo 🔧 Setting up Backend...
+echo.
+
+cd ..\backend
 
 REM Create virtual environment if it doesn't exist
 if not exist "venv" (
@@ -20,28 +51,28 @@ REM Install dependencies
 echo Installing backend dependencies...
 pip install -r requirements.txt
 
+if errorlevel 1 (
+    echo ❌ Backend setup failed!
+    pause
+    exit /b 1
+)
+
+echo ✅ Backend setup complete!
+echo.
+
 REM Start backend
-echo Starting FastAPI backend on http://localhost:8000...
-start cmd /k python main.py
-
-timeout /t 2
-
+echo 🌐 Starting FastAPI Backend...
+echo     Backend: http://localhost:8000
 echo.
-echo Setting up Frontend...
+echo ==========================================
+echo Application is ready!
+echo ==========================================
 echo.
-
-cd ..\frontend
-
-REM Install dependencies
-echo Installing frontend dependencies...
-npm install
-
-REM Start frontend
-echo Starting Vue.js frontend on http://localhost:5173...
+echo Open your browser to: http://localhost:8000
 echo.
-echo ✅ Application is ready! Open http://localhost:5173 in your browser
-echo.
-echo To stop the application, press Ctrl+C in both windows
+echo Press Ctrl+C to stop the application
 echo.
 
-npm run dev
+python main.py
+
+pause

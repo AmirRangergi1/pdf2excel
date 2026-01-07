@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
 import openpyxl
@@ -7,6 +8,7 @@ from openpyxl.utils import get_column_letter
 import io
 import tempfile
 import os
+from pathlib import Path
 
 app = FastAPI(title="PDF to Excel Converter")
 
@@ -107,11 +109,32 @@ async def convert_pdf_to_excel(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/health")
+async def health():
+    """Health check endpoint for Docker"""
+    return {"status": "healthy", "service": "PDF to Excel Converter API"}
+
 @app.get("/")
 async def root():
-    """Health check endpoint"""
+    """Serve frontend index if available, otherwise health message"""
+    try:
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file), media_type="text/html")
+    except Exception:
+        pass
     return {"message": "PDF to Excel Converter API is running"}
+
+# Serve static frontend files
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8000,
+        timeout_keep_alive=300  # 5 minutes keep-alive timeout
+    )

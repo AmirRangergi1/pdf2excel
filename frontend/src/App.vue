@@ -25,10 +25,13 @@
     <div v-if="selectedFile" class="file-info show">
       <div class="file-name">📋 {{ selectedFile.name }}</div>
       <div style="font-size: 12px; color: #666;">
-        Size: {{ (selectedFile.size / 1024).toFixed(2) }} KB
+        Size: {{ formatFileSize(selectedFile.size) }}
       </div>
       <div v-if="progress > 0 && progress < 100" class="progress-bar">
         <div class="progress-fill" :style="{ width: progress + '%' }"></div>
+        <div style="font-size: 12px; color: #666; margin-top: 5px;">
+          {{ progress }}% {{ progress < 50 ? 'Uploading...' : 'Processing...' }}
+        </div>
       </div>
     </div>
     
@@ -93,6 +96,13 @@ export default {
     }
   },
   methods: {
+    formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes'
+      const k = 1024
+      const sizes = ['Bytes', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+    },
     triggerFileInput() {
       this.$refs.fileInput.click()
     },
@@ -127,7 +137,7 @@ export default {
       
       this.isLoading = true
       this.status = 'loading'
-      this.statusMessage = 'Converting PDF to Excel...'
+      this.statusMessage = '⏳ Uploading file... (this may take a few moments for large files)'
       this.progress = 0
       
       try {
@@ -136,8 +146,16 @@ export default {
         
         const response = await axios.post('/api/convert', formData, {
           responseType: 'blob',
+          timeout: 300000, // 5 minutes for large files
           onUploadProgress: (progressEvent) => {
-            this.progress = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+            const percentCompleted = Math.round((progressEvent.loaded / progressEvent.total) * 100)
+            this.progress = percentCompleted
+            // Update message based on progress
+            if (percentCompleted < 50) {
+              this.statusMessage = `⏳ Uploading file... ${percentCompleted}%`
+            } else {
+              this.statusMessage = `⏳ Processing PDF... ${percentCompleted}%`
+            }
           }
         })
         
