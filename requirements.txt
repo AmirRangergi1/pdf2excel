@@ -1,0 +1,10 @@
+requests
+pdfplumber
+pandas
+openpyxl
+# web UI
+flask
+python-dotenv
+# Optional: tabula-py or camelot for alternative table extraction
+# tabula-py
+# camelot-py[cv]

@@ -1,185 +1,24 @@
-# PDF to Excel Converter
+# pdf2excel
 
-A single-page web application that converts PDF tables to Excel spreadsheets.
+Small utility to send a PDF to an AI endpoint (Liara / Google Gemini via a compatible API)
+or convert locally to an Excel file when no API is configured.
 
-## Stack
+Usage
 
-- **Frontend**: Vue.js 3 + Vite
-- **Backend**: Python FastAPI
-- **PDF Processing**: pdfplumber
-- **Excel Generation**: openpyxl
+- Remote (send to AI service):
 
-## Project Structure
-
-```
-pdf2excel/
-├── frontend/           (Vue.js application)
-│   ├── src/
-│   │   ├── App.vue     (Main application component)
-│   │   └── main.js     (Vue initialization)
-│   ├── index.html      (HTML entry point)
-│   ├── vite.config.js  (Vite configuration)
-│   └── package.json
-├── backend/            (FastAPI application)
-│   ├── main.py         (FastAPI app with PDF extraction)
-│   └── requirements.txt (Python dependencies)
-└── README.md
-```
-
-## Installation & Setup
-
-### Backend Setup
-
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-
-2. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   ```
-
-3. Activate the virtual environment:
-   - On Linux/Mac:
-     ```bash
-     source venv/bin/activate
-     ```
-   - On Windows:
-     ```bash
-     venv\Scripts\activate
-     ```
-
-4. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. Start the FastAPI server:
-   ```bash
-   python main.py
-   ```
-   The backend will run on `http://localhost:8000`
-
-### Frontend Setup
-
-1. In a new terminal, navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-   The frontend will open on `http://localhost:5173`
-
-## Usage
-
-1. **Upload PDF**: Drag and drop a PDF file with tables onto the upload zone, or click to browse
-2. **Convert**: Click "Convert to Excel" button
-3. **Download**: Once conversion is complete, click "Download Excel File" to get your spreadsheet
-
-## Features
-
-✅ Drag and drop file upload  
-✅ Real-time progress tracking  
-✅ Automatic table extraction from PDFs  
-✅ Multi-table support (each table on separate sheet)  
-✅ Auto-adjusted column widths  
-✅ Error handling with user-friendly messages  
-✅ Beautiful, responsive UI  
-
-## API Endpoints
-
-### POST `/api/convert`
-Converts a PDF file with tables to an Excel file.
-
-**Request:**
-- Content-Type: `multipart/form-data`
-- Parameter: `file` (PDF file)
-
-**Response:**
-- Content-Type: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-- Returns: Excel file (.xlsx)
-
-**Example:**
-```javascript
-const formData = new FormData()
-formData.append('file', pdfFile)
-const response = await fetch('/api/convert', {
-  method: 'POST',
-  body: formData
-})
-const excelBlob = await response.blob()
-```
-
-## Error Handling
-
-The application handles various error scenarios:
-- Invalid file types (only PDF accepted)
-- PDFs without tables
-- Corrupted PDF files
-- Network errors
-
-All errors are displayed with clear, user-friendly messages.
-
-## Development
-
-### Backend
-- Built with FastAPI for high performance
-- CORS enabled for frontend communication
-- Automatic OpenAPI documentation at `/docs`
-
-### Frontend
-- Vue 3 with Composition API
-- Vite for fast development and optimized builds
-- Responsive design with modern CSS
-- Axios for API communication
-
-## Building for Production
-
-### Frontend
 ```bash
-cd frontend
-npm run build
-```
-This creates an optimized build in the `dist/` folder.
-
-### Backend
-The FastAPI application is production-ready. Deploy using:
-```bash
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+export LIARA_API_ENDPOINT="<base_url_or_upload_endpoint>"
+export LIARA_API_KEY="<your_key>"
+python liara_pdf2excel.py input.pdf output.xlsx
 ```
 
-## Requirements
+You must provide the correct `LIARA_API_ENDPOINT` and `LIARA_API_KEY` as described in the Liara docs: https://docs.liara.ir/ai/google-gemini/
 
-- Python 3.8+
-- Node.js 16+
-- pip package manager
-- npm or yarn
+Tip: the app will automatically load environment variables from a `.env` file (if present) using `python-dotenv`. Alternatively export variables in your shell before running.
 
-## Dependencies
 
-**Backend:**
-- fastapi
-- uvicorn
-- pdfplumber
-- openpyxl
-- python-cors
-- python-multipart
-
-**Frontend:**
-- vue
-- axios
-- vite
-- @vitejs/plugin-vue
-
-## License
-
-MIT
+Notes
+- The script will attempt to POST the PDF as `file` to `LIARA_API_ENDPOINT` with form fields `model`, `task=pdf_to_excel`, and `response_format=excel`.
+- By default the app is in "remote-only" mode and will NOT perform local conversion. To allow local fallback, set `REMOTE_ONLY=0` in your environment or pass `--remote-only` appropriately (CLI defaults to remote-only unless `--remote-only` is omitted).
+- Adjust `LIARA_MODEL` env var if you want a different Gemini model.
